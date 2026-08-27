@@ -1,0 +1,68 @@
+﻿feature,bin,woe,coef,points
+checking_status,0-200,-0.4014,-0.7974,-9.24
+checking_status,<0,-0.8181,-0.7974,-18.82
+checking_status,>=200,0.4055,-0.7974,9.33
+checking_status,no checking,1.1763,-0.7974,27.06
+duration,"(12.0, 15.0]",0.6653,-0.7598,14.58
+duration,"(15.0, 24.0]",-0.1006,-0.7598,-2.2
+duration,"(24.0, 30.0]",-0.1541,-0.7598,-3.38
+duration,"(3.999, 12.0]",0.4674,-0.7598,10.25
+duration,"(30.0, 72.0]",-0.7663,-0.7598,-16.8
+credit_history,all paid,-1.135,-0.6917,-22.65
+credit_history,critical,0.7337,-0.6917,14.64
+credit_history,delayed,-0.0852,-0.6917,-1.7
+credit_history,existing paid,-0.0883,-0.6917,-1.76
+credit_history,no credits,-1.3581,-0.6917,-27.11
+purpose,appliances,-0.1541,-0.9369,-4.17
+purpose,business,-0.2305,-0.9369,-6.23
+purpose,car (new),-0.3592,-0.9369,-9.71
+purpose,car (used),0.7738,-0.9369,20.92
+purpose,education,-0.6061,-0.9369,-16.39
+purpose,furniture,-0.0956,-0.9369,-2.58
+purpose,others,-0.5108,-0.9369,-13.81
+purpose,radio/TV,0.4101,-0.9369,11.09
+purpose,repairs,-0.2877,-0.9369,-7.78
+purpose,retraining,1.2319,-0.9369,33.3
+credit_amount,"(1262.0, 1906.8]",0.2988,-0.6319,5.45
+credit_amount,"(1906.8, 2852.4]",0.1473,-0.6319,2.69
+credit_amount,"(249.999, 1262.0]",-0.0165,-0.6319,-0.3
+credit_amount,"(2852.4, 4720.0]",0.1987,-0.6319,3.62
+credit_amount,"(4720.0, 18424.0]",-0.545,-0.6319,-9.94
+savings_status,100-500,-0.1396,-0.7248,-2.92
+savings_status,500-1000,0.706,-0.7248,14.77
+savings_status,<100,-0.2714,-0.7248,-5.67
+savings_status,>=1000,1.0986,-0.7248,22.97
+savings_status,no savings,0.7042,-0.7248,14.73
+employment,1-4yr,-0.0321,-0.5938,-0.55
+employment,4-7yr,0.3944,-0.5938,6.76
+employment,<1yr,-0.4708,-0.5938,-8.07
+employment,>=7yr,0.2356,-0.5938,4.04
+employment,unemployed,-0.3192,-0.5938,-5.47
+installment_rate,1,0.2513,-1.4083,10.21
+installment_rate,2,0.1555,-1.4083,6.32
+installment_rate,3,0.0645,-1.4083,2.62
+installment_rate,4,-0.1573,-1.4083,-6.39
+personal_status,female,-0.2353,-0.8509,-5.78
+personal_status,male divorced,-0.4418,-0.8509,-10.85
+personal_status,male married,0.1385,-0.8509,3.4
+personal_status,male single,0.1655,-0.8509,4.06
+other_debtors,co-applicant,-0.6022,-0.8688,-15.1
+other_debtors,guarantor,0.5878,-0.8688,14.74
+other_debtors,none,0.0005,-0.8688,0.01
+property,car,-0.0342,-0.3231,-0.32
+property,insurance/savings,-0.0286,-0.3231,-0.27
+property,no property,-0.5861,-0.3231,-5.46
+property,real estate,0.461,-0.3231,4.3
+age,"(18.999, 26.0]",-0.407,-0.7029,-8.25
+age,"(26.0, 30.0]",-0.0741,-0.7029,-1.5
+age,"(30.0, 36.0]",0.2025,-0.7029,4.11
+age,"(36.0, 45.0]",0.1881,-0.7029,3.82
+age,"(45.0, 75.0]",0.237,-0.7029,4.81
+other_installment,bank,-0.4836,-0.7129,-9.95
+other_installment,none,0.1212,-0.7129,2.49
+other_installment,stores,-0.4595,-0.7129,-9.45
+housing,free,-0.4726,-0.3955,-5.39
+housing,own,0.1942,-0.3955,2.22
+housing,rent,-0.4044,-0.3955,-4.62
+foreign_worker,no,1.2629,-0.7844,28.58
+foreign_worker,yes,-0.0349,-0.7844,-0.79
