@@ -54,9 +54,13 @@ def bin_series(s: pd.Series, max_bins: int) -> pd.Series:
     if s.dtype == object or s.nunique() <= max_bins:
         return s.fillna("missing").astype(str)
     try:
-        return pd.qcut(s, q=max_bins, duplicates="drop").astype(str).fillna("missing")
+        binned = pd.qcut(s, q=max_bins, duplicates="drop")
     except ValueError:
         return s.fillna("missing").astype(str)
+    # Label missing values before stringifying: astype(str) would otherwise turn
+    # NaN into the literal bin "nan" and the following fillna would be a no-op.
+    binned = binned.astype(object)
+    return binned.where(binned.notna(), "missing").astype(str)
 
 
 def woe_table(binned: pd.Series, y: pd.Series) -> pd.DataFrame:
