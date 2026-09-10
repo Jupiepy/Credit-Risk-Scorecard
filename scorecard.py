@@ -45,17 +45,20 @@ _EPS = 1e-6
 def bin_series(s: pd.Series, max_bins: int) -> pd.Series:
     """Bin a single feature into string labels.
 
-    * Categorical (object dtype) and low-cardinality numeric features keep each
-      value as its own bin.
+    * Categorical and low-cardinality numeric features keep each value as its
+      own bin.
     * High-cardinality numeric features are cut into ``max_bins`` equal-frequency
       bins (qcut).
     * Missing values become a dedicated ``missing`` bin.
     """
-    if s.dtype == object or s.nunique() <= max_bins:
+    # Test for numeric dtype rather than ``== object``: since pandas 3.0 text
+    # columns are the new ``str`` dtype, so an is-object check lets them fall
+    # through to qcut, which raises TypeError on strings.
+    if not pd.api.types.is_numeric_dtype(s) or s.nunique() <= max_bins:
         return s.fillna("missing").astype(str)
     try:
         binned = pd.qcut(s, q=max_bins, duplicates="drop")
-    except ValueError:
+    except (ValueError, TypeError):
         return s.fillna("missing").astype(str)
     # Label missing values before stringifying: astype(str) would otherwise turn
     # NaN into the literal bin "nan" and the following fillna would be a no-op.
@@ -84,15 +87,24 @@ def iv_from_table(tbl: pd.DataFrame) -> float:
     return float(((tbl["pct_good"] - tbl["pct_bad"]) * tbl["woe"]).sum())
 
 
-def build_woe_map(X: pd.DataFrame, y: pd.Series, iv_threshold: float, max_bins: int):
-    """Select features by IV; return WOE map, binned features and the IV table."""
+def build_woe_map(X: pd.DataFrame, y: pd.Series, iv_threshold: float, max_bins: int,
+                  fit_mask: pd.Series | None = None):
+    """Select features by IV; return WOE map, binned features and the IV table.
+
+    ``fit_mask`` restricts the rows used to estimate WOE and IV. Binning itself is
+    unsupervised, so bins still span the whole dataset -- only the
+    target-dependent statistics come from the masked rows, which is what keeps a
+    holdout honest.
+    """
+    if fit_mask is None:
+        fit_mask = pd.Series(True, index=X.index)
     iv_rows = []
     woe_map: dict[str, dict[str, float]] = {}
     binned_map: dict[str, pd.Series] = {}
 
     for feature in X.columns:
         binned = bin_series(X[feature], max_bins)
-        tbl = woe_table(binned, y)
+        tbl = woe_table(binned[fit_mask], y[fit_mask])
         iv = iv_from_table(tbl)
         iv_rows.append({"feature": feature, "iv": round(iv, 4)})
         if iv >= iv_threshold:
@@ -167,6 +179,39 @@ def evaluate(y_true: pd.Series, proba: pd.Series) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Holdout evaluation
+# --------------------------------------------------------------------------- #
+
+def stratified_holdout_mask(y: pd.Series, frac: float, seed: int) -> pd.Series:
+    """Return a boolean mask where True marks the holdout rows.
+
+    Sampling is stratified, so the holdout keeps the bad rate of the full sample
+    -- a plain random split can leave too few defaults to estimate KS reliably.
+    """
+    rng = np.random.default_rng(seed)
+    mask = pd.Series(False, index=y.index)
+    for cls in (0, 1):
+        idx = np.flatnonzero((y == cls).to_numpy())
+        k = int(round(len(idx) * frac))
+        if k:
+            mask.iloc[rng.choice(idx, size=k, replace=False)] = True
+    return mask
+
+
+def psi(expected: np.ndarray, actual: np.ndarray, bins: int = 10) -> float:
+    """Population Stability Index between two score distributions.
+
+    ``expected`` (normally the training scores) supplies the bin edges. Rule of
+    thumb: < 0.1 stable, 0.1-0.25 drifting, > 0.25 materially shifted.
+    """
+    edges = np.quantile(expected, np.linspace(0, 1, bins + 1))
+    edges[0], edges[-1] = -np.inf, np.inf
+    exp = np.clip(np.histogram(expected, bins=edges)[0] / expected.size, 1e-6, None)
+    act = np.clip(np.histogram(actual, bins=edges)[0] / actual.size, 1e-6, None)
+    return float(np.sum((act - exp) * np.log(act / exp)))
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -180,6 +225,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pdo", type=float, default=20, help="Points to Double Odds")
     p.add_argument("--base-odds", type=float, default=50, help="基准分对应的好坏比 (good:bad)")
     p.add_argument("--output-dir", default="output", help="结果输出目录")
+    p.add_argument("--holdout-frac", type=float, default=0.0,
+                   help="留出比例（0 = 全样本建模，不改变原有结果）")
+    p.add_argument("--seed", type=int, default=42, help="留出抽样的随机种子")
     return p.parse_args()
 
 
@@ -192,17 +240,38 @@ def main() -> None:
     y = df[args.target]
     X = df.drop(columns=[args.target])
 
-    woe_map, binned_map, iv_table = build_woe_map(X, y, args.iv_threshold, args.max_bins)
+    holdout = (stratified_holdout_mask(y, args.holdout_frac, args.seed)
+               if args.holdout_frac > 0 else None)
+    fit_mask = None if holdout is None else ~holdout
+
+    woe_map, binned_map, iv_table = build_woe_map(
+        X, y, args.iv_threshold, args.max_bins, fit_mask=fit_mask
+    )
     X_woe = transform_woe(binned_map, woe_map)
 
     model = LogisticRegression(max_iter=1000)
-    model.fit(X_woe, y)
+    model.fit(X_woe if fit_mask is None else X_woe[fit_mask],
+              y if fit_mask is None else y[fit_mask])
     proba = model.predict_proba(X_woe)[:, 1]
 
     scorecard, factor, base_points = scorecard_scaling(
         model, woe_map, args.base_score, args.pdo, args.base_odds
     )
     metrics = evaluate(y, proba)
+
+    holdout_report = None
+    if holdout is not None:
+        train_idx = (~holdout).to_numpy()
+        test_idx = holdout.to_numpy()
+        holdout_report = {
+            "holdout_frac": args.holdout_frac,
+            "seed": args.seed,
+            "n_train": int(train_idx.sum()),
+            "n_holdout": int(test_idx.sum()),
+            "train": evaluate(y[~holdout], proba[train_idx]),
+            "holdout": evaluate(y[holdout], proba[test_idx]),
+            "psi_scores": round(psi(proba[train_idx], proba[test_idx]), 4),
+        }
 
     # ---- write outputs ----
     iv_table.to_csv(output_dir / "iv_table.csv", index=False, encoding="utf-8-sig")
@@ -230,6 +299,8 @@ def main() -> None:
         "factor": round(factor, 4),
         "base_points": base_points,
     }
+    if holdout_report is not None:
+        summary["holdout"] = holdout_report
     (output_dir / "metrics.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -237,7 +308,14 @@ def main() -> None:
     # ---- console summary ----
     print(f"样本数: {summary['样本数']} | 坏账率: {summary['坏账率']:.1%}")
     print(f"入模变量: {summary['入模变量数']} 个（IV >= {args.iv_threshold}）")
-    print(f"KS = {metrics['ks']} | AUC = {metrics['auc']}")
+    print(f"KS = {metrics['ks']} | AUC = {metrics['auc']}（全样本）")
+    if holdout_report is not None:
+        tr, ho = holdout_report["train"], holdout_report["holdout"]
+        print(f"留出 {holdout_report['n_holdout']} / 训练 {holdout_report['n_train']}"
+              f"（seed {holdout_report['seed']}）")
+        print(f"  训练   KS = {tr['ks']} | AUC = {tr['auc']}")
+        print(f"  留出   KS = {ho['ks']} | AUC = {ho['auc']}")
+        print(f"  分数 PSI = {holdout_report['psi_scores']}")
     print(f"基准分 {args.base_score} / PDO {args.pdo} / base_points {base_points}")
     print("\nIV 排名前 8:")
     for row in iv_table.head(8).itertuples(index=False):

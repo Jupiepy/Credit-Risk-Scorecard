@@ -75,14 +75,38 @@ pip install -r requirements.txt
 #   or (CN mirror):  pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 python scorecard.py --input data/german_credit.csv --output-dir output
+
+# optional: hold out 30% of the sample to get an out-of-sample read
+python scorecard.py --input data/german_credit.csv --output-dir output \
+  --holdout-frac 0.3 --seed 42
 ```
+
+`bin_series` relies on `pd.api.types.is_numeric_dtype`, so both string columns and
+the pandas 3.0 `str` dtype are binned as categories instead of being fed to
+`qcut`.
 
 Outputs written to `output/`:
 
 - `scorecard.csv` — the point-based scorecard (feature, bin, WOE, coef, points)
 - `iv_table.csv` — every feature's Information Value
 - `woe_table.csv` — per-bin counts and WOE
-- `metrics.json` — KS, AUC, bad rate, scaling parameters
+- `metrics.json` — KS, AUC, bad rate, scaling parameters (plus a `holdout`
+  block with train / holdout metrics and score PSI when `--holdout-frac > 0`)
+
+### Why the holdout matters
+
+With `--holdout-frac 0.3 --seed 42` (700 train / 300 holdout, stratified so the
+holdout keeps the 30% bad rate):
+
+| Sample | KS | AUC |
+|---|---|---|
+| Train | 0.563 | 0.843 |
+| **Holdout** | **0.471** | **0.746** |
+
+Score PSI between train and holdout is **0.046** — comfortably inside the
+"< 0.1 = stable" band, so the drop is generalisation error rather than a shifted
+population. It also puts a number on the caveat in *Production Next Steps*: the
+in-sample KS of 0.523 is optimistic by roughly nine points.
 
 ## Data
 
