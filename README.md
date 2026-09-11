@@ -108,6 +108,16 @@ Score PSI between train and holdout is **0.046** — comfortably inside the
 population. It also puts a number on the caveat in *Production Next Steps*: the
 in-sample KS of 0.523 is optimistic by roughly nine points.
 
+`--cv 5` runs the same idea as stratified 5-fold cross-validation, refitting
+binning, WOE and the model inside every fold (reusing WOE values estimated on the
+full sample would leak the target into an out-of-sample estimate):
+
+**KS 0.467 ± 0.042 | AUC 0.772 ± 0.018**
+
+Two independent out-of-sample estimates agreeing that KS sits near 0.47 and AUC
+near 0.75–0.78 is the real result here; 0.523 is the number the training sample
+wants you to believe.
+
 ## Data
 
 UCI **Statlog (German Credit)**: 1000 applicants, 20 attributes (7 numeric, 13

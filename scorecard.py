@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.model_selection import StratifiedKFold
 
 TARGET = "target"  # 1 = default (bad), 0 = good
 
@@ -198,6 +199,41 @@ def stratified_holdout_mask(y: pd.Series, frac: float, seed: int) -> pd.Series:
     return mask
 
 
+def cross_validate(X: pd.DataFrame, y: pd.Series, iv_threshold: float,
+                   max_bins: int, folds: int, seed: int) -> dict:
+    """Stratified k-fold CV that refits the *whole* pipeline on every fold.
+
+    Binning, WOE estimation and the logistic fit are all redone inside each
+    fold -- reusing WOE values estimated on the full sample would leak the
+    target into what is supposed to be an out-of-sample estimate.
+    """
+    splitter = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
+    per_fold = []
+    for train_idx, test_idx in splitter.split(X, y):
+        fit_mask = pd.Series(False, index=X.index)
+        fit_mask.iloc[train_idx] = True
+        woe_map, binned_map, _ = build_woe_map(
+            X, y, iv_threshold, max_bins, fit_mask=fit_mask
+        )
+        X_woe = transform_woe(binned_map, woe_map)
+        fold_model = LogisticRegression(max_iter=1000)
+        fold_model.fit(X_woe[fit_mask], y[fit_mask])
+        proba = fold_model.predict_proba(X_woe[~fit_mask])[:, 1]
+        per_fold.append(evaluate(y[~fit_mask], proba))
+
+    ks = [f["ks"] for f in per_fold]
+    auc = [f["auc"] for f in per_fold]
+    return {
+        "folds": folds,
+        "seed": seed,
+        "ks_mean": round(float(np.mean(ks)), 4),
+        "ks_std": round(float(np.std(ks)), 4),
+        "auc_mean": round(float(np.mean(auc)), 4),
+        "auc_std": round(float(np.std(auc)), 4),
+        "per_fold": per_fold,
+    }
+
+
 def psi(expected: np.ndarray, actual: np.ndarray, bins: int = 10) -> float:
     """Population Stability Index between two score distributions.
 
@@ -228,6 +264,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--holdout-frac", type=float, default=0.0,
                    help="留出比例（0 = 全样本建模，不改变原有结果）")
     p.add_argument("--seed", type=int, default=42, help="留出抽样的随机种子")
+    p.add_argument("--cv", type=int, default=0,
+                   help="分层 k 折交叉验证的折数（0 = 不做）")
     return p.parse_args()
 
 
@@ -273,6 +311,10 @@ def main() -> None:
             "psi_scores": round(psi(proba[train_idx], proba[test_idx]), 4),
         }
 
+    cv_report = None
+    if args.cv > 1:
+        cv_report = cross_validate(X, y, args.iv_threshold, args.max_bins, args.cv, args.seed)
+
     # ---- write outputs ----
     iv_table.to_csv(output_dir / "iv_table.csv", index=False, encoding="utf-8-sig")
 
@@ -301,6 +343,8 @@ def main() -> None:
     }
     if holdout_report is not None:
         summary["holdout"] = holdout_report
+    if cv_report is not None:
+        summary["cross_validation"] = cv_report
     (output_dir / "metrics.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -316,6 +360,10 @@ def main() -> None:
         print(f"  训练   KS = {tr['ks']} | AUC = {tr['auc']}")
         print(f"  留出   KS = {ho['ks']} | AUC = {ho['auc']}")
         print(f"  分数 PSI = {holdout_report['psi_scores']}")
+    if cv_report is not None:
+        print(f"{cv_report['folds']} 折交叉验证（seed {cv_report['seed']}）")
+        print(f"  KS  = {cv_report['ks_mean']} ± {cv_report['ks_std']}")
+        print(f"  AUC = {cv_report['auc_mean']} ± {cv_report['auc_std']}")
     print(f"基准分 {args.base_score} / PDO {args.pdo} / base_points {base_points}")
     print("\nIV 排名前 8:")
     for row in iv_table.head(8).itertuples(index=False):
